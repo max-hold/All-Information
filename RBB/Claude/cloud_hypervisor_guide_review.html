@@ -1,0 +1,441 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .wrap { padding: 1.5rem 0; }
+  .summary-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 2rem; }
+  .stat { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 14px; text-align: center; }
+  .stat-num { font-size: 28px; font-weight: 500; }
+  .stat-label { font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; }
+  .s-critical { color: #A32D2D; }
+  .s-config { color: #BA7517; }
+  .s-logic { color: #185FA5; }
+  .s-security { color: #3B6D11; }
+
+  .section-title { font-size: 13px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-secondary); margin: 2rem 0 0.75rem; padding-bottom: 6px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+
+  .error-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); margin-bottom: 10px; overflow: hidden; cursor: pointer; }
+  .error-card:hover { border-color: var(--color-border-secondary); }
+  .card-header { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+  .b-critical { background: #FCEBEB; color: #A32D2D; }
+  .b-dep     { background: #FAEEDA; color: #854F0B; }
+  .b-config  { background: #E6F1FB; color: #185FA5; }
+  .b-logic   { background: #EAF3DE; color: #3B6D11; }
+  .b-perf    { background: #F1EFE8; color: #5F5E5A; }
+  .b-security{ background: #EEEDFE; color: #534AB7; }
+
+  .card-title { font-size: 14px; font-weight: 500; color: var(--color-text-primary); flex: 1; }
+  .card-loc   { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; font-family: var(--font-mono); }
+  .chevron { font-size: 14px; color: var(--color-text-secondary); transition: transform 0.2s; flex-shrink: 0; margin-top: 2px; }
+  .card-body { display: none; padding: 0 14px 14px; border-top: 0.5px solid var(--color-border-tertiary); margin-top: 0; }
+  .card-body.open { display: block; }
+  .desc { font-size: 13px; color: var(--color-text-secondary); margin-top: 10px; line-height: 1.6; }
+  .fix-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-top: 12px; margin-bottom: 5px; }
+  pre { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; font-size: 12px; font-family: var(--font-mono); overflow-x: auto; line-height: 1.6; color: var(--color-text-primary); white-space: pre-wrap; word-break: break-all; }
+  .del { color: #A32D2D; text-decoration: line-through; }
+  .add { color: #3B6D11; }
+  .note { font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; font-style: italic; line-height: 1.5; }
+</style>
+
+<div class="wrap">
+
+<div class="summary-bar">
+  <div class="stat"><div class="stat-num s-critical">4</div><div class="stat-label">Critical (boot-blockers)</div></div>
+  <div class="stat"><div class="stat-num s-config">6</div><div class="stat-label">Config errors</div></div>
+  <div class="stat"><div class="stat-num s-logic">6</div><div class="stat-label">Logic / flow errors</div></div>
+  <div class="stat"><div class="stat-num s-security">3</div><div class="stat-label">Security issues</div></div>
+</div>
+
+<div class="section-title">Critical — VM will not boot</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-critical">CRITICAL</span>
+    <div style="flex:1"><div class="card-title">Missing initrd — kernel won't find the root filesystem</div><div class="card-loc">Part 5 › vm-config.json + launch scripts</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">Cloud Hypervisor uses direct kernel boot (not BIOS/UEFI). Direct kernel boot requires both a kernel image <em>and</em> an initrd (initial ramdisk). The initrd unpacks early userspace, loads kernel modules, and mounts the real root filesystem. Without it, the kernel panics immediately at boot with <code>VFS: Unable to mount root fs</code>.</div>
+    <div class="fix-label">Fix — add initrd to every launch command and vm-config.json</div>
+    <pre><span class="del">--kernel /boot/vmlinuz \</span>
+<span class="add">--kernel /boot/vmlinuz-$(uname -r) \
+--initramfs /boot/initrd.img-$(uname -r) \</span></pre>
+    <div class="note">Important: see error #2 — the host kernel itself is also wrong here. Both must be extracted from the guest image.</div>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-critical">CRITICAL</span>
+    <div style="flex:1"><div class="card-title">Host kernel used to boot guest — incompatible modules and ABI</div><div class="card-loc">Part 5 › vm-config.json, all launch scripts</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The guide points the guest kernel at <code>/boot/vmlinuz</code> — the host's own kernel. A cloud image guest needs its own kernel built with virtio drivers and the matching guest ABI. The host kernel may lack these modules entirely, and even if it boots, kernel/module version mismatches will cause driver failures. The correct approach is to extract the kernel and initrd from the downloaded cloud image itself.</div>
+    <div class="fix-label">Fix — extract kernel and initrd from the cloud image</div>
+    <pre><span class="add">sudo modprobe nbd
+sudo qemu-nbd --connect=/dev/nbd0 ubuntu-browser.img
+sudo mount /dev/nbd0p1 /mnt/guest
+
+KERNEL=$(ls /mnt/guest/boot/vmlinuz-* | tail -1)
+INITRD=$(ls /mnt/guest/boot/initrd.img-* | tail -1)
+cp $KERNEL ./guest-vmlinuz
+cp $INITRD ./guest-initrd.img
+
+sudo umount /mnt/guest
+sudo qemu-nbd --disconnect /dev/nbd0</span>
+
+# Then launch with:
+<span class="add">--kernel ./guest-vmlinuz \
+--initramfs ./guest-initrd.img \</span></pre>
+    <div class="note">Alternatively, download a cloud-hypervisor-compatible kernel from the upstream releases page.</div>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-critical">CRITICAL</span>
+    <div style="flex:1"><div class="card-title">Broken password hash in cloud-init — login will fail silently</div><div class="card-loc">Part 3 › user-data (passwd field)</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The password hash <code>$6$rounds=4096$saltsaltsal$L7gFZEq...</code> is a truncated, fabricated hash. SHA-512 hashes are 86 characters of base64 after the salt — this one is cut short. Cloud-init will either reject it or create the account with an invalid password, locking you out of the VM entirely on first boot.</div>
+    <div class="fix-label">Fix — generate a real hash with openssl or python3</div>
+    <pre><span class="add"># Generate a proper hash first:
+python3 -c "import crypt; print(crypt.crypt('browser123', crypt.mksalt(crypt.METHOD_SHA512)))"
+# or
+openssl passwd -6 browser123</span>
+
+# In user-data, use the full output:
+<span class="add">passwd: $6$RaNd0mSaLt$FULL_86_CHAR_HASH_HERE</span>
+
+# Simpler alternative — use plain_text_passwd (dev only):
+<span class="add">plain_text_passwd: browser123
+lock_passwd: false</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-critical">CRITICAL</span>
+    <div style="flex:1"><div class="card-title">TAP device not accessible to cloud-hypervisor process</div><div class="card-loc">Part 4 › setup-network.sh + all launch scripts</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The TAP device is created with <code>sudo ip tuntap add</code> but the launch scripts run <code>cloud-hypervisor</code> without sudo. The process won't have permission to open the TAP file descriptor. Either run cloud-hypervisor as root (not recommended) or use the <code>user</code> flag on tuntap creation and add the user to the <code>kvm</code> group.</div>
+    <div class="fix-label">Fix — create TAP device owned by the current user</div>
+    <pre><span class="del">sudo ip tuntap add tap-ch0 mode tap</span>
+<span class="add">sudo ip tuntap add tap-ch0 mode tap user $USER group kvm
+sudo usermod -aG kvm $USER  # if not already done</span>
+
+# Also ensure /dev/kvm is accessible:
+<span class="add">sudo chmod 666 /dev/kvm
+# or add yourself to the kvm group and re-login</span></pre>
+  </div>
+</div>
+
+<div class="section-title">Dependency errors</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-dep">DEPENDENCY</span>
+    <div style="flex:1"><div class="card-title">sshpass never installed but used in launch-vnc.sh</div><div class="card-loc">Part 1 › Step 1.2 apt install block</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc"><code>launch-vnc.sh</code> calls <code>sshpass -p 'browser123' ssh ...</code> to automate SSH login into the VM, but <code>sshpass</code> is never listed in the initial dependency install. The script will fail with <code>command not found</code>.</div>
+    <div class="fix-label">Fix — add to the apt install block in Step 1.2</div>
+    <pre><span class="add">sshpass \</span>
+    virt-viewer \
+    spice-client-gtk</pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-dep">DEPENDENCY</span>
+    <div style="flex:1"><div class="card-title">vncviewer called but only virt-viewer is installed — wrong binary</div><div class="card-loc">Part 1 › Step 1.2 + Part 7 › Step 7.1</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The guide installs <code>virt-viewer</code>, which provides the <code>remote-viewer</code> binary — not <code>vncviewer</code>. Both <code>launch-vnc.sh</code> and Step 7.1 call <code>vncviewer</code>, which doesn't exist after this install. These are completely separate packages.</div>
+    <div class="fix-label">Fix — install the correct VNC client package</div>
+    <pre><span class="add">sudo apt install -y tigervnc-viewer</span>
+# provides: vncviewer
+
+# OR keep virt-viewer and call it correctly:
+<span class="add">remote-viewer vnc://192.168.100.2:5901</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-dep">DEPENDENCY</span>
+    <div style="flex:1"><div class="card-title">remmina used in launch-spice.sh but not in dependency install</div><div class="card-loc">Part 1 › Step 1.2 / Part 5 › Step 5.3</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc"><code>launch-spice.sh</code> calls <code>remmina -c rdp://...</code> for RDP connection. <code>remmina</code> and <code>remmina-plugin-rdp</code> are only mentioned much later in Part 7 Step 7.2 as if optional, but they're required for the main SPICE/RDP script to function.</div>
+    <div class="fix-label">Fix — add remmina to initial dependencies</div>
+    <pre><span class="add">remmina \
+remmina-plugin-rdp \</span>
+    virt-viewer \</pre>
+  </div>
+</div>
+
+<div class="section-title">Configuration errors</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-config">CONFIG</span>
+    <div style="flex:1"><div class="card-title">vm-config.json net section mixes TAP name with static IP — conflicting fields</div><div class="card-loc">Part 5 › vm-config.json</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">When you specify <code>"tap": "tap-ch0"</code> in Cloud Hypervisor's net config, you are binding to an existing TAP device. The <code>ip</code> and <code>mask</code> fields in the same block are for Cloud Hypervisor to configure an internally-managed TAP — they conflict and will cause a config validation error or be silently ignored, depending on the CH version.</div>
+    <div class="fix-label">Fix — use either an existing TAP or let CH manage the device, not both</div>
+    <pre>"net": [
+  {
+    "tap": "tap-ch0",
+    "mac": "12:34:56:78:90:ab"
+<span class="del">    "ip": "192.168.100.2",
+    "mask": "255.255.255.0"</span>
+  }
+]</pre>
+    <div class="note">Guest IP is assigned by DHCP from your host-side DHCP server (or configured statically inside the guest). The net config section is not the place to set guest IP when using an external TAP.</div>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-config">CONFIG</span>
+    <div style="flex:1"><div class="card-title">Cloud-init network-config uses enp0s3 — virtio-net interface is named differently</div><div class="card-loc">Part 3 › Step 3.2 network-config</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">Ubuntu cloud images with predictable network interface naming will name the first virtio-net device <code>ens3</code> or <code>enp1s0</code> inside a Cloud Hypervisor VM — not <code>enp0s3</code>. <code>enp0s3</code> is the VirtualBox naming convention. With the wrong interface name, cloud-init network config does nothing and DHCP may not run.</div>
+    <div class="fix-label">Fix — use a wildcard match or the correct virtio interface name</div>
+    <pre>version: 2
+ethernets:
+<span class="del">  enp0s3:</span>
+<span class="add">  ens3:        # typical Cloud Hypervisor virtio-net name
+    # or use: enp1s0</span>
+    dhcp4: true
+
+# Safest option — match all ethernet devices:
+<span class="add">  id0:
+    match:
+      name: "en*"
+    dhcp4: true</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-config">CONFIG</span>
+    <div style="flex:1"><div class="card-title">X server started without a display config — xorg.conf doesn't exist in the guest</div><div class="card-loc">Part 5 › launch-vnc.sh (SSH heredoc)</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The script runs <code>sudo X :0 -config /etc/X11/xorg.conf</code> inside the VM. A cloud image has no physical display, so <code>/etc/X11/xorg.conf</code> doesn't exist. X will exit immediately. For a headless/VNC setup, you need a dummy display driver config.</div>
+    <div class="fix-label">Fix — create a dummy xorg.conf before starting X</div>
+    <pre><span class="add">sudo apt install -y xserver-xorg-video-dummy
+sudo tee /etc/X11/xorg.conf > /dev/null << 'XCONF'
+Section "Device"
+  Identifier "DummyDevice"
+  Driver "dummy"
+  VideoRam 256000
+EndSection
+Section "Screen"
+  Identifier "DummyScreen"
+  Device "DummyDevice"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+    Modes "1920x1080"
+  EndSubSection
+EndSection
+XCONF</span>
+sudo X :0 -config /etc/X11/xorg.conf &</pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-config">CONFIG</span>
+    <div style="flex:1"><div class="card-title">Image resize applied to original before copy — wastes the original base image</div><div class="card-loc">Part 3 › Step 3.1</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The guide resizes the downloaded image first, then copies it. This permanently modifies the original download, so you can't re-use it to create a fresh VM or a different size without re-downloading.</div>
+    <div class="fix-label">Fix — copy first, resize the copy</div>
+    <pre><span class="del">qemu-img resize jammy-server-cloudimg-amd64.img +10G
+cp jammy-server-cloudimg-amd64.img ubuntu-browser.img</span>
+<span class="add">cp jammy-server-cloudimg-amd64.img ubuntu-browser.img
+qemu-img resize ubuntu-browser.img +10G</span></pre>
+  </div>
+</div>
+
+<div class="section-title">Logic / flow errors</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-logic">LOGIC</span>
+    <div style="flex:1"><div class="card-title">VNC port inconsistency throughout the guide — 5900 vs 5901</div><div class="card-loc">Part 5 Step 5.2 vs Part 7 Step 7.1</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc"><code>launch-vnc.sh</code> connects to port <code>5900</code> (x11vnc default, display :0). Step 7.1 tells the user to connect to port <code>5901</code> (tightvncserver display :1). These are two different VNC approaches — the guide mixes them up. A junior engineer following both sections in order will get a connection refused error.</div>
+    <div class="fix-label">Fix — pick one VNC method and use it consistently</div>
+    <pre># If using tightvncserver (recommended — more stable):
+vncserver -geometry 1920x1080 -depth 24   # starts on :1 → port 5901
+<span class="add">vncviewer 192.168.100.2:5901</span>
+
+# If using x11vnc (display :0 → port 5900):
+x11vnc -display :0 -forever -shared -nopw
+<span class="add">vncviewer 192.168.100.2:5900</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-logic">LOGIC</span>
+    <div style="flex:1"><div class="card-title">Two conflicting VNC methods defined — x11vnc in launch script, tightvncserver in Step 6.2</div><div class="card-loc">Part 5 Step 5.2 vs Part 6 Step 6.2</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc"><code>launch-vnc.sh</code> SSHes into the VM and installs/starts <code>x11vnc</code>. Step 6.2 installs <code>tightvncserver</code> and sets up <code>startxfce4</code>. These are mutually exclusive workflows with different ports, startup methods, and desktop environments. Running both will cause port conflicts and configuration chaos.</div>
+    <div class="fix-label">Fix — use tightvncserver + XFCE consistently (more reliable for desktops)</div>
+    <pre># Remove the x11vnc section from launch-vnc.sh entirely.
+# In cloud-init user-data, add to runcmd:
+<span class="add">  - apt install -y tightvncserver xfce4 xfce4-goodies
+  - su -c 'vncserver -geometry 1920x1080 -depth 24' browser</span>
+# And pre-create ~/.vnc/xstartup via write_files in cloud-init</pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-logic">LOGIC</span>
+    <div style="flex:1"><div class="card-title">SSH heredoc won't reliably start background processes in the VM</div><div class="card-loc">Part 5 › launch-vnc.sh</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The script uses <code>sshpass ssh ... &lt;&lt; 'REMOTE'</code> to start X and VNC inside the VM as background processes. When the SSH session closes, those background jobs are killed (SIGHUP). The X server and VNC will die the moment the heredoc finishes, before <code>vncviewer</code> can connect.</div>
+    <div class="fix-label">Fix — use nohup or a systemd unit, or separate SSH commands with -f</div>
+    <pre><span class="add">sshpass -p 'browser123' ssh -o StrictHostKeyChecking=no \
+  -f browser@$VM_IP \
+  "nohup Xvfb :1 -screen 0 1920x1080x24 &>/dev/null & \
+   sleep 2 && \
+   nohup x11vnc -display :1 -forever -shared -nopw &>/dev/null &"</span>
+# -f forks SSH into background after auth but before command exits</pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-logic">LOGIC</span>
+    <div style="flex:1"><div class="card-title">benchmark.sh uses ping to measure boot — measures network up, not boot complete</div><div class="card-loc">Part 10 › benchmark.sh</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The benchmark waits for a successful <code>ping</code> to declare boot complete and records that as <code>BOOT_TIME</code>. Ping responds as soon as the network interface initialises — which happens long before <code>cloud-init</code>, the desktop, xrdp, or VNC are ready. The measured time is meaningless for the stated goal of running Firefox.</div>
+    <div class="fix-label">Fix — wait for SSH or the VNC port to confirm a fully-booted guest</div>
+    <pre><span class="del">while ! ping -c 1 192.168.100.2 &>/dev/null; do sleep 0.1; done</span>
+<span class="add">while ! nc -z 192.168.100.2 22 2>/dev/null; do sleep 0.5; done
+echo "SSH port open — cloud-init may still be running"
+# For full readiness, wait for port 5901 (VNC) or 3389 (RDP)</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-perf">PERFORMANCE</span>
+    <div style="flex:1"><div class="card-title">Performance expectations are off by 10-40x — misleading for capacity planning</div><div class="card-loc">Part 10 › Expected Performance section</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The guide claims "VM boot time: 100–150ms" and "total to browser: 2–3 seconds". Cloud Hypervisor's hypervisor initialisation is ~100ms, but a full Ubuntu cloud image with desktop packages, cloud-init, xrdp/VNC startup, and Firefox launch realistically takes 45–120 seconds on first boot, and 20–60 seconds on subsequent boots.</div>
+    <div class="fix-label">Corrected realistic estimates</div>
+    <pre>Cloud Hypervisor hypervisor init:   ~100–200ms
+Ubuntu guest kernel + initrd boot:  ~3–8 seconds
+cloud-init (first boot, apt installs): 5–15 minutes
+cloud-init (subsequent boots):       30–90 seconds
+Desktop + VNC/xrdp ready:            +10–30 seconds
+─────────────────────────────────────────────────
+First boot total:                   ~10–20 minutes
+Subsequent boot to browser ready:   ~60–120 seconds</pre>
+  </div>
+</div>
+
+<div class="section-title">Security issues</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-security">SECURITY</span>
+    <div style="flex:1"><div class="card-title">Hardcoded plaintext credentials in scripts and source files</div><div class="card-loc">launch-vnc.sh, launch-spice.sh, file-monitor.py, user-data</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">The password <code>browser123</code> appears in shell scripts, Python source, and cloud-init configs in plaintext. For an "isolated browser" security tool, this defeats the purpose — any process that can read these files has the VM credentials. Scripts will also end up in shell history.</div>
+    <div class="fix-label">Fix — use SSH keys and environment variables</div>
+    <pre><span class="add"># Generate SSH key for VM access (no password)
+ssh-keygen -t ed25519 -f ~/.ssh/ch_browser -N ""
+
+# In cloud-init user-data, add the public key:
+ssh_authorized_keys:
+  - $(cat ~/.ssh/ch_browser.pub)
+
+# In scripts, use key-based auth:
+ssh -i ~/.ssh/ch_browser browser@$VM_IP
+
+# Store sensitive values in environment, not source:
+export VM_PASSWORD="$(pass show browser-vm)"  # or use a secrets manager</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-security">SECURITY</span>
+    <div style="flex:1"><div class="card-title">StrictHostKeyChecking=no disables MITM protection on every SSH connection</div><div class="card-loc">Part 5 › launch-vnc.sh</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc">Using <code>-o StrictHostKeyChecking=no</code> tells SSH to accept any host key without verification. Even on a local network, this is poor practice — it prevents detection of IP reuse or ARP spoofing. The guide uses this as a lazy workaround for the re-provisioned VM getting a new host key.</div>
+    <div class="fix-label">Fix — use a known_hosts file scoped to the VM's MAC address</div>
+    <pre><span class="del">ssh -o StrictHostKeyChecking=no browser@$VM_IP</span>
+<span class="add"># After first boot, trust the key explicitly once:
+ssh-keyscan -H $VM_IP >> ~/.ssh/known_hosts_chvm
+
+# Then in all SSH calls:
+ssh -o UserKnownHostsFile=~/.ssh/known_hosts_chvm \
+    -i ~/.ssh/ch_browser browser@$VM_IP</span></pre>
+  </div>
+</div>
+
+<div class="error-card" onclick="toggle(this)">
+  <div class="card-header">
+    <span class="badge b-security">SECURITY</span>
+    <div style="flex:1"><div class="card-title">paramiko.AutoAddPolicy() in file-monitor.py disables host verification</div><div class="card-loc">Part 8 › file-monitor.py</div></div>
+    <span class="chevron">▸</span>
+  </div>
+  <div class="card-body">
+    <div class="desc"><code>ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())</code> is the paramiko equivalent of <code>StrictHostKeyChecking=no</code> — it blindly accepts any host key. For a security-oriented tool, this should use <code>RejectPolicy</code> with a pre-loaded known_hosts file.</div>
+    <div class="fix-label">Fix — load known host keys explicitly</div>
+    <pre><span class="del">ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())</span>
+<span class="add">ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+ssh.load_host_keys(os.path.expanduser('~/.ssh/known_hosts_chvm'))</span></pre>
+  </div>
+</div>
+
+</div>
+
+<script>
+function toggle(card) {
+  const body = card.querySelector('.card-body');
+  const chev = card.querySelector('.chevron');
+  const open = body.classList.toggle('open');
+  chev.textContent = open ? '▾' : '▸';
+}
+</script>
