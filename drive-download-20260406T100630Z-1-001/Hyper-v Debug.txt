@@ -1,4 +1,0 @@
-# If the Failed to create the virtual hard disk.
-# The system failed to create 'C:\VMs\IsolatedBrowser.vhdx': The file exists. 
-# Run this command to remove the file, if the process run kill the process.
-Remove-Item "C:\VMs\IsolatedBrowser.vhdx"
