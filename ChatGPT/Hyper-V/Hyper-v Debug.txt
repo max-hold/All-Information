@@ -2,3 +2,27 @@
 # The system failed to create 'C:\VMs\IsolatedBrowser.vhdx': The file exists. 
 # Run this command to remove the file, if the process run kill the process.
 Remove-Item "C:\VMs\IsolatedBrowser.vhdx"
+
+
+
+# Reuse existing disk
+# If the disk is valid and you want to reuse it
+New-VM -Name "IsolatedBrowser-Build" `
+    -MemoryStartupBytes 2GB `
+    -Generation 2 `
+    -VHDPath "C:\VMs\IsolatedBrowser.vhdx"
+.....
+
+
+
+# Stop the VM
+Stop-VM "IsolatedBrowser-Build" -Force
+
+
+
+# Enable Dynamic Memory
+
+
+
+# Stop other all VMs
+Get-VM | Stop-VM -Force

@@ -1,30 +1,23 @@
-1. Enable Hyper-V (one-time step)
-	dism.exe /Online /Enable-Feature /All /FeatureName:Microsoft-Hyper-V
+# Create a Virtual Machine using Terminal
+New-VM -Name "MyVM" -MemoryStartupBytes 2GB -Generation 2
+Set-VMProcessor -VMName "MyVM" -Count 2
 
-2. Create a Virtual Machine using Terminal
-	New-VM -Name "MyVM" -MemoryStartupBytes 4GB -Generation 2
+# Create Virtual Hard Disk (File Capacity)
+New-VHD -Path "C:\VMs\MyVM.vhdx" -SizeBytes 50GB -Dynamic
+# Then attach it
+Add-VMHardDiskDrive -VMName "MyVM" -Path "C:\VMs\MyVM.vhdx"
 
-3. Set CPU (Program Capacity)
-	Set-VMProcessor -VMName "MyVM" -Count 2
+# Attach ISO File (for OS installation)
+Add-VMDvdDrive -VMName "MyVM" -Path "C:\ISOs\alpine-extended-3.23.3-x86_64.iso"
 
-4. Create Virtual Hard Disk (File Capacity)
-	New-VHD -Path "C:\VMs\MyVM.vhdx" -SizeBytes 50GB -Dynamic
+# Configure Boot Order (boot from ISO)
+Set-VMFirmware -VMName "MyVM" -FirstBootDevice (Get-VMDvdDrive -VMName "MyVM")
+# Disable Secure Boot for Alpine Gen2
+Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off
 
-Then attach it:
-	Add-VMHardDiskDrive -VMName "MyVM" -Path "C:\VMs\MyVM.vhdx"
-
-
-5. Attach ISO File (for OS installation)
-	Add-VMDvdDrive -VMName "MyVM" -Path "C:\ISO\windows.iso"
-
-6. Configure Boot Order (boot from ISO)
-	Set-VMFirmware -VMName "MyVM" -FirstBootDevice (Get-VMDvdDrive -VMName "MyVM")
-
-7. Start the VM
-	Start-VM -Name "MyVM"
-
-8. Connect to VM
-	vmconnect.exe localhost MyVM (This opens the VM screen where you install the OS from ISO.)
+# Start the VM
+Start-VM -Name "MyVM"
+vmconnect.exe localhost MyVM
 
 
 ============================================================================================================================================================================================

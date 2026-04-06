@@ -1,151 +1,14 @@
-when i give this command to powershell " # Create build VM (temporary, used to install Alpine)                                           >> $buildVM = New-VM -Name "IsolatedBrowser-Build"                                                                     >>     -MemoryStartupBytes 2GB                                                                                         >>     -Generation 2                                                                                                   >>     -NewVHDPath "C:\VMs\IsolatedBrowser.vhdx"                                                                       >>     -NewVHDSizeBytes 10GB                                                                                            >>                                                                                                                      >> Set-VMProcessor $buildVM.Name -Count 2                                                                               >> Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\ISOs\alpine-extended-3.20-x86_64.iso"                                 >>                                                                                                                      >> # Disable Secure Boot for Alpine Gen2                                                                                >> Set-VMFirmware -VMName $buildVM.Name -SecureBootTemplate OpenSourceShieldedVM                                        >> Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off                                                           >>                                                                                                                      >> Start-VM $buildVM.Name                                                                                               PS C:\Windows\system32> # Create build VM (temporary, used to install Alpine)                                           >> $buildVM = New-VM -Name "IsolatedBrowser-Build"                                                                     >>     -MemoryStartupBytes 2GB                                                                                         >>     -Generation 2                                                                                                   >>     -NewVHDPath "C:\VMs\IsolatedBrowser.vhdx"                                                                       >>     -NewVHDSizeBytes 10GB                                                                                            >>                                                                                                                      >> Set-VMProcessor $buildVM.Name -Count 2                                                                               >> Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\Users\Hima Window\OneDrive\Desktop"                                   >>                                                                                                                      >> # Disable Secure Boot for Alpine Gen2                                                                                >> Set-VMFirmware -VMName $buildVM.Name -SecureBootTemplate OpenSourceShieldedVM                                        >> Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off                                                           >>                                                                                                                      >> Start-VM $buildVM.Name " return this error"New-VM : Failed to create the virtual hard disk.                                                                        The system failed to create 'C:\VMs\IsolatedBrowser.vhdx'.                                                              Failed to create the virtual hard disk.                                                                                 The system failed to create 'C:\VMs\IsolatedBrowser.vhdx': The file exists. (0x80070050).                               At line:2 char:12                                                                                                       + $buildVM = New-VM -Name "IsolatedBrowser-Build"                                                                      +            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                                                         + CategoryInfo          : NotSpecified: (:) [New-VM], VirtualizationException                                           + FullyQualifiedErrorId : OperationFailed,Microsoft.HyperV.PowerShell.Commands.NewVM                                                                                                                                                        Set-VMProcessor : Cannot validate argument on parameter 'VMName'. The argument is null or empty. Provide an argument    that is not null or empty, and then try the command again.                                                              At line:8 char:17                                                                                                       + Set-VMProcessor $buildVM.Name -Count 2                                                                                +                 ~~~~~~~~~~~~~                                                                                             + CategoryInfo          : InvalidData: (:) [Set-VMProcessor], ParameterBindingValidationException                       + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.HyperV.PowerShell.Commands.SetVMProcessor                                                                                                                              Set-VMDvdDrive : Cannot validate argument on parameter 'VMName'. The argument is null or empty. Provide an argument     that is not null or empty, and then try the command again.                                                              At line:9 char:24                                                                                                       + Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\Users\Hima Window\OneD ...                                             +                        ~~~~~~~~~~~~~                                                                                      + CategoryInfo          : InvalidData: (:) [Set-VMDvdDrive], ParameterBindingValidationException                        + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.HyperV.PowerShell.Commands.SetVMDvdDrive                                                                                                                               Set-VMFirmware : Cannot validate argument on parameter 'VMName'. The argument is null or empty. Provide an argument     that is not null or empty, and then try the command again.                                                              At line:12 char:24                                                                                                      + Set-VMFirmware -VMName $buildVM.Name -SecureBootTemplate OpenSourceSh ...                                             +                        ~~~~~~~~~~~~~                                                                                      + CategoryInfo          : InvalidData: (:) [Set-VMFirmware], ParameterBindingValidationException                        + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.HyperV.PowerShell.Commands.SetVMFirmware                                                                                                                               Set-VMFirmware : Cannot validate argument on parameter 'VMName'. The argument is null or empty. Provide an argument     that is not null or empty, and then try the command again.                                                              At line:13 char:24                                                                                                      + Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off                                                            +                        ~~~~~~~~~~~~~                                                                                      + CategoryInfo          : InvalidData: (:) [Set-VMFirmware], ParameterBindingValidationException                        + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.HyperV.PowerShell.Commands.SetVMFirmware                                                                                                                               Start-VM : Cannot validate argument on parameter 'Name'. The argument is null or empty. Provide an argument that is     not null or empty, and then try the command again.                                                                      At line:15 char:10                                                                                                      + Start-VM $buildVM.Name                                                                                                +          ~~~~~~~~~~~~~                                                                                                    + CategoryInfo          : InvalidData: (:) [Start-VM], ParameterBindingValidationException                              + FullyQualifiedErrorId : ParameterArgumentValidationError,Microsoft.HyperV.PowerShell.Commands.StartVM "
 
-You’re actually hitting one root error, and everything else is just a cascade from it.
-
-🔴 The real problem
-Failed to create 'C:\VMs\IsolatedBrowser.vhdx': The file exists. (0x80070050)
-
-This means:
-👉 The virtual disk file already exists at:
-
-C:\VMs\IsolatedBrowser.vhdx
-
-So New-VM fails immediately.
-
-⚠️ Why all the other errors happen
-
-Because this line failed:
-
-$buildVM = New-VM ...
-
-👉 $buildVM becomes null
-
-So every later command using $buildVM.Name fails with:
-
-The argument is null or empty
-✅ How to fix it
-Option 1: Delete the existing VHD (simplest)
-
-If you don’t need the old disk:
-
-Remove-Item "C:\VMs\IsolatedBrowser.vhdx"
-
-Then rerun your script.
-
-Option 2: Use a different VHD name
-
-Change this line:
-
--NewVHDPath "C:\VMs\IsolatedBrowser.vhdx"
-
-to something like:
-
--NewVHDPath "C:\VMs\IsolatedBrowser2.vhdx"
-Option 3: Reuse existing disk (advanced)
-
-If the disk is valid and you want to reuse it:
-
-New-VM -Name "IsolatedBrowser-Build" `
-    -MemoryStartupBytes 2GB `
-    -Generation 2 `
-    -VHDPath "C:\VMs\IsolatedBrowser.vhdx"
-⚠️ Another issue in your command
-
-You wrote:
-
-Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\Users\Hima Window\OneDrive\Desktop"
-
-That is wrong ❌
-
-👉 It must point to an ISO file, not a folder.
-
-Correct example:
-
-Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\ISOs\alpine-extended-3.20-x86_64.iso"
-✅ Clean working version
-$buildVM = New-VM -Name "IsolatedBrowser-Build" `
-    -MemoryStartupBytes 2GB `
-    -Generation 2 `
-    -NewVHDPath "C:\VMs\IsolatedBrowser2.vhdx" `
-    -NewVHDSizeBytes 10GB
-
-Set-VMProcessor $buildVM.Name -Count 2
-
-Set-VMDvdDrive -VMName $buildVM.Name `
-    -Path "C:\ISOs\alpine-extended-3.20-x86_64.iso"
-
-Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off
-
-Start-VM $buildVM.Name
-🔍 Quick checklist
-✔ C:\VMs\ folder exists
-✔ No duplicate .vhdx file
-✔ ISO path is correct
-✔ Hyper-V is installed
-
-If you want, I can also help you:
-
-Automatically clean up old VMs before creating new ones
-Or write a fully reusable script that never breaks like this again 👍
-Set-VMFirmware : 'IsolatedBrowser-Build' failed to modify settings.                                                     Cannot modify the secure boot property.                                                                                 'IsolatedBrowser-Build' failed to modify settings. (Virtual machine ID D447E79D-B50C-4048-87FA-B5AC3C87AE92)            Cannot modify the secure boot property while the virtual machine is running.                                            At line:12 char:1                                                                                                       + Set-VMFirmware -VMName $buildVM.Name -SecureBootTemplate OpenSourceSh ...                                             + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                                     + CategoryInfo          : NotSpecified: (:) [Set-VMFirmware], VirtualizationException                                   + FullyQualifiedErrorId : OperationFailed,Microsoft.HyperV.PowerShell.Commands.SetVMFirmware                                                                                                                                                Start-VM : 'IsolatedBrowser-Build' failed to start.                                                                     Not enough memory in the system to start the virtual machine IsolatedBrowser-Build.                                     Could not initialize memory: Not enough memory resources are available to complete this operation. (0x8007000E).        'IsolatedBrowser-Build' failed to start. (Virtual machine ID 7CF6303E-CC80-41DE-96BD-F493BC121522)                      Not enough memory in the system to start the virtual machine IsolatedBrowser-Build with ram size 2048 megabytes.        (Virtual machine ID 7CF6303E-CC80-41DE-96BD-F493BC121522)                                                               'IsolatedBrowser-Build' could not initialize memory: Not enough memory resources are available to complete this         operation. (0x8007000E). (Virtual machine ID 7CF6303E-CC80-41DE-96BD-F493BC121522)                                      At line:15 char:1                                                                                                       + Start-VM $buildVM.Name                                                                                                + ~~~~~~~~~~~~~~~~~~~~~~                                                                                                    + CategoryInfo          : FromStdErr: (:) [Start-VM], VirtualizationException                                           + FullyQualifiedErrorId : OutOfMemory,Microsoft.HyperV.PowerShell.Commands.StartVM
-
-You’ve now got two separate issues, and they’re both very fixable.
-
-🔴 Issue 1: Secure Boot error
-Cannot modify the secure boot property while the virtual machine is running
-✅ What happened
-
-You tried:
-
-Set-VMFirmware ...
-
-after the VM already started
-
-👉 Hyper-V does NOT allow firmware changes while the VM is running.
-
-✅ Fix
-
-Stop the VM first:
-
-Stop-VM "IsolatedBrowser-Build" -Force
-
-Then run:
-
-Set-VMFirmware -VMName "IsolatedBrowser-Build" -EnableSecureBoot Off
-🔴 Issue 2: Not enough memory
-Not enough memory resources... 2048 MB
-✅ Why this happens
-
-Your system doesn’t have enough free RAM for a 2GB VM
-
-Common reasons:
-
-Too many apps open (browser, IDEs, etc.)
-Other VMs already running
-Hyper-V reserved memory
-✅ Fix options (pick one)
-Option A: Lower VM RAM (fastest fix)
-
-Alpine Linux is lightweight — you don’t need 2GB.
-
-Use 512MB or 1GB:
-
-Set-VM -Name "IsolatedBrowser-Build" -MemoryStartupBytes 1GB
-
-or even:
-
-Set-VM -Name "IsolatedBrowser-Build" -MemoryStartupBytes 512MB
-Option B: Enable Dynamic Memory (best)
+Option B:  (best)
 
 This lets Hyper-V adjust RAM automatically:
 
 Set-VM -Name "IsolatedBrowser-Build" -DynamicMemory
 Set-VM -Name "IsolatedBrowser-Build" -MemoryMinimumBytes 512MB
 Set-VM -Name "IsolatedBrowser-Build" -MemoryMaximumBytes 2GB
-Option C: Free system RAM
-Close Chrome/Edge tabs
-Stop other VMs:
-Get-VM | Stop-VM -Force
+
+
+
 ✅ Recommended clean sequence
 
 Run this in order:
@@ -157,28 +20,10 @@ Set-VMFirmware -VMName "IsolatedBrowser-Build" -EnableSecureBoot Off
 Set-VM -Name "IsolatedBrowser-Build" -MemoryStartupBytes 1GB
 
 Start-VM "IsolatedBrowser-Build"
-⚠️ One important note
 
-For Alpine Linux, disabling Secure Boot is correct 👍
-But you only need to do it once before first boot.
 
-🧠 Pro tip (to avoid this forever)
 
-Always configure VM before starting it:
 
-New-VM ...
-Set-VMProcessor ...
-Set-VMDvdDrive ...
-Set-VMFirmware ...
-Start-VM
-
-If you want, I can give you a perfect one-click script that:
-
-Deletes old VM safely
-Recreates everything cleanly
-Avoids ALL these errors automatically
-
-You’ve now got two separate issues, and they’re both very fixable.
 
 🔴 Issue 1: Secure Boot error
 Cannot modify the secure boot property while the virtual machine is running
@@ -300,6 +145,7 @@ Then run:
 
 Set-VMDvdDrive -VMName "IsolatedBrowser-Build" `
   -Path "C:\ISOs\alpine-extended-3.20-x86_64.iso"
+
 2. Set boot order (VERY important)
 
 Hyper-V is trying:
