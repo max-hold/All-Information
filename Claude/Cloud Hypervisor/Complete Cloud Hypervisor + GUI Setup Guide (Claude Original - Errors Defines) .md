@@ -30,6 +30,9 @@ sudo modprobe kvm_intel  # OR: sudo modprobe kvm_amd
 
 ### Step 1.2: Install Dependencies
 
+#### This Step Has a Missing dependencies issue
+1. `sshpass`, `remmina`, and `vncviewer` aren't installed but are needed by the scripts.
+
 ```bash
 # Update system
 sudo apt update && sudo apt upgrade -y
@@ -91,8 +94,15 @@ cd ~/cloud-hypervisor-setup
 ---
 
 ## Part 3: Create Guest OS Image
-
 ### Step 3.1: Download Ubuntu Cloud Image
+
+#### This Step Has a Issue-Kernel issue
+1. Cloud Hypervisor requires a separate kernel (vmlinuz) that's compatible - you can't just use /boot/vmlinuz from the host. 
+2. You need to download a specific kernel or extract it from the cloud image. Cloud Hypervisor uses a direct kernel boot model typically.
+
+#### This Step Has a Image resize then copy issue
+1. Resize the original image then copy it. They should copy first, then resize the copy, or resize the copy.
+2. they're resizing the original and then copying it, which works but is wasteful - better to copy first then resize.
 
 ```bash
 cd ~/cloud-hypervisor-setup
@@ -110,6 +120,9 @@ echo "✅ Base image downloaded and resized"
 ```
 
 ### Step 3.2: Create Cloud-Init Configuration
+
+#### This Step Has a Password hash issue
+1. The password hash is clearly a fake/broken hash. This will cause cloud-init to fail to set the password correctly.
 
 ```bash
 cd ~/cloud-hypervisor-setup
@@ -187,9 +200,14 @@ echo "✅ Cloud-init configuration created"
 ---
 
 ## Part 4: Set Up Networking
-
 ### Step 4.1: Create TAP Device
 
+#### This Step Has a TAP device ownership issue
+1. The TAP device needs to be owned by the user running cloud-hypervisor, or cloud-hypervisor needs to run as root. 
+2. The script runs `sudo ip tuntap add tap-ch0 mode tap` but cloud-hypervisor is launched without sudo
+
+#### This Step Has a Network interface naming issue
+1. The cloud-init config specifies `enp0s3`, but Cloud Hypervisor's virtio-net interfaces might actually be named `eth0` or something else depending on the image.
 ```bash
 # Create network setup script
 cat > ~/cloud-hypervisor-setup/setup-network.sh << 'EOF'
@@ -224,8 +242,14 @@ chmod +x setup-network.sh
 ---
 
 ## Part 5: Configure Cloud Hypervisor
-
 ### Step 5.1: Create VM Configuration File
+
+#### This Step Has a vm-config.json kernel path issue
+1. Using `/boot/vmlinuz` from the host won't work with cloud images. Cloud Hypervisor needs a compatible kernel. The host kernel won't boot a cloud image guest properly.
+2. The `net` section specifies both `tap` and `ip/mask` fields, but Cloud Hypervisor doesn't work that way—when using TAP, IP configuration is handled by DHCP in the guest, not in the config.
+
+#### This Step Has a cmdline issue
+1. `root=/dev/vda1` - cloud images typically use `root=/dev/vda1` but the partition may vary. Also missing cloud-init related kernel params.
 
 ```bash
 cd ~/cloud-hypervisor-setup
@@ -276,6 +300,18 @@ sed -i "s|YOUR_USERNAME|$USER|g" vm-config.json
 ```
 
 ### Step 5.2: Create Launcher Script (Method 1: VNC)
+
+#### This Step Has a launch-vnc.sh issue
+1. `sshpass` is used but never installed as a dependency. Also `x11vnc` requires an existing X display, which won't be available in this setup.
+
+#### This Step Has a VNC approach issue
+1. The script tries to SSH and start X from scratch inside the VM, which is overly complex and error-prone. Since cloud-init already sets up xrdp, using RDP would be much simpler.
+
+#### This Step Has a VNC approach issue
+1. The scripts call `vncviewer` but only `virt-viewer` is installed, which provides `remote-viewer` instead. Need `tigervnc-viewer` or `xtightvncviewer`.
+
+#### This Step Has a VVNC port inconsistency issue
+1. The launch script connects to port 5900 (x11vnc default), but Step 7.1 references port 5901 (tightvncserver's display :1), creating a mismatch.
 
 ```bash
 cat > ~/cloud-hypervisor-setup/launch-vnc.sh << 'EOF'
@@ -382,26 +418,15 @@ chmod +x launch-spice.sh
 ```
 
 ---
-## Install OVMF firmware
-```bash
-sudo apt install ovmf -y
-
-find /usr -name "OVMF.fd" 2>/dev/null
-find /usr/share -name "OVMF*" 2>/dev/null
-# Or
-find /usr/share -name "*.fd" 2>/dev/null | grep -i ovmf
-find /usr -name "*.fd" 2>/dev/null | grep -i ovmf
-# Common locations:
-# /usr/share/OVMF/OVMF.fd
-# /usr/share/ovmf/OVMF.fd
-
-cp /usr/share/ovmf/OVMF.fd ~/cloud-hypervisor-setup/OVMF_VARS.fd
-# then use that copy in --firmware
-```
 
 ## Part 6: Launch Virtual Machine
-
 ### Step 6.1: First Boot
+
+#### This Step Has a sudo cloud-hypervisor issue
+1. Running with sudo introduces TAP device setup and ownership issues that complicate the setup.
+2. The guide mixes two different VNC approaches—x11vnc in the launch script and tightvncserver elsewhere—creating confusion about which method to actually use.
+3. Cloud Hypervisor's direct kernel boot requires both a kernel and an initrd, but the config only specifies the kernel.
+4. Ubuntu cloud images come with their own kernels and cloud-init setup, so you can't just use the host's `/boot/vmlinuz` you need to extract the kernel and initrd from the image itself or download them separately.
 
 ```bash
 cd ~/cloud-hypervisor-setup
@@ -409,18 +434,15 @@ cd ~/cloud-hypervisor-setup
 # Ensure network is setup
 ./setup-network.sh
 
-
-
 # Start Cloud Hypervisor manually for first boot
 sudo cloud-hypervisor \
     --cpus boot=2 \
     --memory size=2G \
-    --disk path=ubuntu-browser.img,image_type=qcow2 \
-    --disk path=cloud-init.img,readonly=on,image_type=raw \
+    --disk path=ubuntu-browser.img \
+    --disk path=cloud-init.img,readonly=on \
     --net tap=tap-ch0,mac=12:34:56:78:90:ab \
-    --firmware /usr/share/ovmf/OVMF.fd \ # <-- replace with actual path or the copy file
-    --serial tty \
-    --console off
+    --console tty \
+    --serial null &
 
 # Wait for boot (watch console)
 # Login with: browser / browser123
@@ -490,8 +512,10 @@ remmina -c rdp://browser:browser123@192.168.100.2
 ---
 
 ## Part 8: File Monitoring
-
 ### Step 8.1: Monitor Script (Host Side)
+
+#### This Step Has a issue
+1. he `paramiko` approach works, but The `inotifywait` output streams line by line to stdout, so the exec_command approach won't capture it properly as a stream
 
 ```bash
 cat > ~/cloud-hypervisor-setup/file-monitor.py << 'EOF'
