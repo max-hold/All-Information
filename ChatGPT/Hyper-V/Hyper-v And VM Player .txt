@@ -1,3 +1,6 @@
+# Enable Hyper-V (one-time step)
+dism.exe /Online /Enable-Feature /All /FeatureName:Microsoft-Hyper-V
+
 # Create a Virtual Machine using Terminal
 New-VM -Name "MyVM" -MemoryStartupBytes 2GB -Generation 2
 Set-VMProcessor -VMName "MyVM" -Count 2
