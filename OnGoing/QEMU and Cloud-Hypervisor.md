@@ -52,7 +52,7 @@ Implementation Roadmap Cloud Hypervisor VM.
 
 &#x09;Enable SECCOMP bpf filters on the CH process.
 
-&#x09;Run the CH process as a non-root user with minimal capabilities (`CAP\\\_NET\\\_ADMIN`, `CAP\\\_SYS\\\_ADMIN` restricted).
+&#x09;Run the CH process as a non-root user with minimal capabilities (`CAP\\\\\\\_NET\\\\\\\_ADMIN`, `CAP\\\\\\\_SYS\\\\\\\_ADMIN` restricted).
 
 &#x09;Disable all virtio devices you don't need (no network bridging, use NAT with strictegress filtering).
 
