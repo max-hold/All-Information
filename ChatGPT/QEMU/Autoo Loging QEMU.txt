@@ -1,0 +1,161 @@
+What You Need to Change in Your Setup
+
+Your guide is already strong
+But we modify it to match your idea.
+
+🔧 1. Auto-launch Chromium on VM boot
+
+Inside user-data, fix this:
+
+runcmd:
+  - systemctl set-default graphical.target
+  - systemctl enable lightdm
+  - echo "exec chromium-browser --no-sandbox --start-maximized" > /home/browser/.xinitrc
+
+OR better (auto-login + autostart):
+
+mkdir -p /home/browser/.config/autostart
+
+cat > /home/browser/.config/autostart/chromium.desktop << EOF
+[Desktop Entry]
+Type=Application
+Exec=chromium-browser --no-sandbox --start-maximized
+Hidden=false
+X-GNOME-Autostart-enabled=true
+Name=Chromium
+EOF
+
+🔧 2. Force Auto Login
+sudo nano /etc/lightdm/lightdm.conf
+
+Add:
+
+[Seat:*]
+autologin-user=browser
+autologin-user-timeout=0
+
+👉 So:
+
+VM boots
+Logs in
+Chromium opens instantly
+🔧 3. Use VNC as Output (Your “GUI pipe”)
+
+Modify launch script:
+
+qemu-system-x86_64 \
+  -enable-kvm \
+  -cpu host \
+  -smp 2 \
+  -m 2G \
+  -drive file=ubuntu-microvm.img,format=qcow2 \
+  -netdev user,id=net0 \
+  -device virtio-net,netdev=net0 \
+  -vnc :0 \
+  -usb \
+  -device usb-tablet
+
+👉 Important:
+
+-usb -device usb-tablet = smooth mouse
+VNC = your GUI output channel
+
+
+
+
+
+Lock the VM (Important)
+
+Inside VM:
+
+# Remove unnecessary apps
+sudo apt remove -y firefox libreoffice*
+
+# Disable terminal access (optional)
+sudo chmod 700 /usr/bin/gnome-terminal
+
+
+
+Force Chromium Kiosk Mode
+
+chromium-browser \
+  --no-sandbox \
+  --kiosk \
+  --incognito \
+  --disable-extensions \
+  --disable-infobars \
+  --start-maximized
+
+👉 This makes it:
+
+fullscreen
+no escape UI
+clean session
+
+
+Snapshot System
+
+On host:
+
+qemu-img snapshot -c clean ubuntu-microvm.img
+
+Before every run:
+
+qemu-img snapshot -a clean ubuntu-microvm.img
+
+👉 This gives:
+
+fresh browser every time
+no persistence = secure
+
+
+
+
+
+
+
+MicroVM Mode Limitation
+
+Your guide uses:
+
+-M microvm
+
+👉 Problem:
+
+MicroVM = minimal devices
+GUI support is limited / tricky
+✔ Recommendation:
+
+Use standard mode instead:
+
+-machine q35
+
+👉 You’ll get:
+
+stable display
+better input handling
+easier Chromium support
+
+
+
+
+
+Launch Script
+
+#!/bin/bash
+
+# Reset VM
+qemu-img snapshot -a clean ubuntu-microvm.img
+
+# Start VM
+qemu-system-x86_64 \
+  -enable-kvm \
+  -machine q35 \
+  -cpu host \
+  -smp 2 \
+  -m 2G \
+  -drive file=ubuntu-microvm.img,format=qcow2 \
+  -netdev user,id=net0 \
+  -device virtio-net,netdev=net0 \
+  -vnc :0 \
+  -usb -device usb-tablet
