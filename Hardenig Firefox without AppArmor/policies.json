@@ -1,0 +1,122 @@
+{
+  "policies": {
+    "AppAutoUpdate": false,
+    "BlockAboutConfig": true,
+    "BlockAboutProfiles": true,
+    "BlockAboutSupport": true,
+    "BlockAboutAddons": true,
+    "BlockAboutSettings": true,
+    "DontCheckDefaultBrowser": true,
+    "DisableAppUpdate": true,
+    "DisableDeveloperTools": true,
+    "DisableFeedbackCommands": true,
+    "DisableFirefoxAccounts": true,
+    "DisableFirefoxStudies": true,
+    "DisableFirefoxStudies_comment": "Disable Firefox studies (Shield).",
+    "DisableForgetButton": true,
+    "DisableFormHistory": true,
+    "DisableMasterPasswordCreation": true,
+    "DisablePasswordReveal": true,
+    "DisablePocket": true,
+    "DisableTelemetry": true,
+    "DisableSystemAddonUpdate": true,
+    "DisableSecurityBypass": true,
+    "DisableSetDesktopBackground": true,
+    "DisableSafeMode": true,
+    "DisableProfileRefresh": true,
+    "DisablePrivateBrowsing": true,
+    "DisableProfileImport": true,
+    "DisableRightClick": true,
+    "DisplayMenuBar": "never",
+    "DisplayBookmarksToolbar": "never",
+    "DownloadDirectory": "~/Downloads",
+    "DefaultDownloadDirectory": "~/Downloads",   
+    "ExtensionUpdate": false,
+    "NoDefaultBookmarks": false,
+    "NetworkPrediction": false,
+    "OfferToSaveLogins": false,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "PromptForDownloadLocation":false,
+    "PasswordManagerEnabled": false,
+    "SanitizeOnShutdown": true,
+    "SearchSuggestEnabled": false,
+    "UseDownloadDir": true,
+    "Homepage": {
+       "URL":"https://www.google.com",
+       "StartPage":"Homepage",
+       "Locked":true
+    },
+    "ExtensionSettings": {
+      "*": {
+        "blocked_install_message":"Extension installation is not permitted on this system.",
+        "installation_mode": "blocked"
+      },
+      "kiosk-guard@browser-vm": {
+        "installation_mode":"force_installed",
+        "install_url":"file:///opt/kiosk-guard/kiosk-guard.xpi"
+      }
+    },
+    "Permissions":{
+      "Location":{"BlockNewRequests":true},
+      "Notifications":{"BlockNewRequests":true},
+      "Camera":{"BlockNewRequests":true},
+      "Microphone":{"BlockNewRequests":true}
+    },
+    "FirefoxSuggest":{
+      "WebSuggestions":false,
+      "SponsoredSuggestions":false,
+      "ImproveSuggest":false,
+      "Locked":true
+    },
+    "UserMessaging":{
+      "WhatsNew":false,
+      "ExtensionRecommendations":false,
+      "FeatureRecommendations":false,
+      "UrlbarInterventions":false,
+      "SkipOnboarding":true,
+      "MoreFromMozilla":false
+    },
+    "PopupBlocking": {
+      "Allow": ["https://youtube.com/",
+                "https://google.com/"],
+      "Default": true,
+      "Locked": true
+    },
+    "WebsiteFilter": {
+      "Block": ["<all_urls>"],
+      "Exceptions": ["https://google.com/"]
+    },
+    "Preferences": {
+      "accessibility.force_disabled": {"Value": 1,"Status": "locked"},
+      "browser.download.useDownloadDir": {"Value": true,"Status": "locked"},
+      "browser.download.always_ask_before_handling_new_types": {"Value": false,"Status": "locked"},
+      "browser.download.manager.showWhenStarting": {"Value": false,"Status": "locked"},
+      "browser.tabs.closeWindowWithLastTab": {"Value": false,"Status": "locked"},
+      "browser.aboutConfig.showWarning": {"Value": false,"Status": "locked"},
+      "browser.shell.checkDefaultBrowser": {"Value": false,"Status": "locked"},
+      "dom.disable_open_during_load": {"Value": true,"Status": "locked"},
+      "browser.gesture.pinch.in": { "Value": "", "Status": "locked" },
+      "browser.gesture.pinch.in.shift": { "Value": "", "Status": "locked" },
+      "browser.gesture.pinch.out": { "Value": "", "Status": "locked" },
+      "browser.gesture.pinch.out.shift": { "Value": "", "Status": "locked" },
+      "browser.gesture.swipe.down": { "Value": "", "Status": "locked" },
+      "browser.gesture.swipe.left": { "Value": "", "Status": "locked" },
+      "browser.gesture.swipe.right": { "Value": "", "Status": "locked" },
+      "browser.gesture.swipe.up": { "Value": "", "Status": "locked" },
+      "browser.gesture.tap": { "Value": "", "Status": "locked" },
+      "browser.gesture.twist.end": { "Value": "", "Status": "locked" },
+      "browser.gesture.twist.left": { "Value": "", "Status": "locked" },
+      "browser.gesture.twist.right": { "Value": "", "Status": "locked" },
+      "signon.rememberSignons": { "Value": false, "Status": "locked" },
+      "signon.autofillForms": { "Value": false, "Status": "locked" },
+      "security.insecure_field_warning.contextual.enabled": { "Value": false, "Status": "locked" }
+    },
+    "SearchEngines": {
+      "Default": "DuckDuckGo",
+      "Default_comment": "Set the default search engine to DuckDuckGo instead of Google.",
+      "PreventInstalls": true,
+      "SearchSuggestEnabled": true
+    }
+  }
+}
