@@ -1,0 +1,29 @@
+1. Use Alpine cloud images (recommended for automation)
+	Instead of booting installer ISO:
+		download prebuilt Alpine cloud image (.qcow2)
+		boot it directly
+		These are already installed OS images, so no:
+			keyboard questions
+			timezone prompts
+			network setup wizard
+			disk partitioning
+		Just boot and configure.
+
+	Example flow:
+		download qcow2 -> boot VM -> SSH in -> run scripts
+
+
+2. Create a golden base image once
+	If you need more customization:
+		Boot Alpine once manually
+		Run through setup
+		Install your base packages
+		Configure SSH/users/network
+		Shut down
+		Then save that disk as your template:
+			alpine-base.qcow2
+		Later, clone it for each new VM:
+			cp alpine-base.qcow2 my-new-vm.qcow2
+
+		or more efficiently:
+			qemu-img create -f qcow2 -b alpine-base.qcow2 vm1.qcow2

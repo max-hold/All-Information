@@ -1,0 +1,92 @@
+# Enable Hyper-V (one-time step)
+dism.exe /Online /Enable-Feature /All /FeatureName:Microsoft-Hyper-V
+
+# Create a Virtual Machine using Terminal
+New-VM -Name "MyVM" -MemoryStartupBytes 2GB -Generation 2
+Set-VMProcessor -VMName "MyVM" -Count 2
+
+# Create Virtual Hard Disk (File Capacity)
+New-VHD -Path "C:\VMs\MyVM.vhdx" -SizeBytes 50GB -Dynamic
+# Then attach it
+Add-VMHardDiskDrive -VMName "MyVM" -Path "C:\VMs\MyVM.vhdx"
+
+# Attach ISO File (for OS installation)
+Add-VMDvdDrive -VMName "MyVM" -Path "C:\ISOs\alpine-extended-3.23.3-x86_64.iso"
+
+# Configure Boot Order (boot from ISO)
+Set-VMFirmware -VMName "MyVM" -FirstBootDevice (Get-VMDvdDrive -VMName "MyVM")
+# Disable Secure Boot for Alpine Gen2
+Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off
+
+# Start the VM
+Start-VM -Name "MyVM"
+vmconnect.exe localhost MyVM
+
+
+============================================================================================================================================================================================
+
+
+With VMware Workstation Player, you can use CMD/PowerShell to control VMs, but:
+
+You can start, stop, and manage VMs via command line
+But creating and configuring VMs (CPU, RAM, disk, ISO) is not fully supported via simple commands
+
+You usually either:
+Create the VM once in GUI, then control it via CLI Or manually edit VM config files (.vmx)
+
+1. Command-line tool (vmrun)
+	VMware provides a CLI tool called: vmrun.exe
+					
+Typical path:
+	C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe
+
+2. Start a VM from CMD
+	vmrun start "C:\VMs\MyVM\MyVM.vmx" (You must point to the .vmx file (the VM config file))
+
+3. Stop / Power off VM
+	vmrun stop "C:\VMs\MyVM\MyVM.vmx"
+
+4. Pause / Resume
+	vmrun pause "C:\VMs\MyVM\MyVM.vmx"
+	vmrun unpause "C:\VMs\MyVM\MyVM.vmx"
+
+5. What you can’t easily do in CMD (Player version)
+
+Unlike Hyper-V, VMware Workstation Player does NOT easily support:
+
+ Creating VM from scratch via one command
+ Setting CPU/RAM via CLI
+ Attaching ISO directly via simple command
+ Workaround (advanced method)
+
+You can do it manually by editing the .vmx file:
+
+Example:
+
+memsize = "4096"
+numvcpus = "2"
+ide1:0.fileName = "C:\ISO\windows.iso"
+
+Then start VM:
+
+vmrun start "C:\VMs\MyVM\MyVM.vmx"
+
+ This is basically “manual configuration”
+
+
+
+Pro Tip
+	If you want full CLI control in VMware, use:
+		 VMware Workstation Pro
+	It has better scripting/automation support than Player.
+
+
+
+============================================================================================================================================================================================
+
+
+
+
+
+
+

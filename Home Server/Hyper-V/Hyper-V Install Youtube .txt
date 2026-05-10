@@ -1,0 +1,46 @@
+install windowsFeature -Name Hyper-V -IncludeManagementTools -Restart
+
+# Create a directory store the Vm
+mkdir <Path>
+
+# Vm machinepath
+set-VMHost -VirtualMachinepath <Path> -VirtualHardDiskPath <Path>
+
+# Network Setup
+Get-NetAdapter
+
+# Get the ISO file
+Start-BitTransfer https://the.earth.li/~sgtatham/putty/latest/w64/putty.exe
+Start-BitTransfer https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-virt—3.23.3—x86_64.iso
+
+# Link the VMnet adapter to the Host Network
+New-VMSwitch -Name <SwitchName> -NetAdapterName <AdapterName> -AllowManagementOS $true
+
+#
+# In the Generation 2 VMs there no Set, It has "Add"
+New-VM -Name <VMName> -Generation <1 or 2> -MemoryStartupBytes 2GB -NewVHDPath <.vhdx Path> -NewVHDSizeBytes 2GB -SwitchName <NameOfTheSwitch>
+
+# Check The Drive Is Assign 
+Get-VMDvdDrive <VMName>
+
+# Set the ISO Drive 
+Set-VMDvdDrive <VMName> -Path <ISOfilePath>
+
+
+Set—VMComPort <VMName> -Number -Path \\.\pipe\alpine-gen1-com
+
+Set-VMBios <VMName> -StartupOrder @("IDE", "CD", "Floppy", "LegacyNetworkAdapter")
+
+start-VM <VMName>
+
+
+
+
+rc-update add <PackegeName>
+
+rc-service <PackegeName> status
+
+rc-status
+
+ps ax | grep lighttpd
+

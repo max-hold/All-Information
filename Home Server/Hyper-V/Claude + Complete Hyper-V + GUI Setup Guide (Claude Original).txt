@@ -1,0 +1,641 @@
+# Browser Isolation System — Full Engineering Blueprint
+
+## What we just confirmed from research
+
+Before touching a keyboard, here's what the research locked in:
+
+**Hyper-V** gives us a Type-1 hypervisor sitting between the hardware and Windows. The VM (child partition) has zero direct hardware access — all I/O flows through the VMBus. This is our isolation boundary. The `AF_HYPERV` / `AF_VSOCK` socket pair is how the host and guest will talk privately without touching the VM's network interface at all.
+
+**Alpine Linux** in kiosk mode can boot to a bare X11 session with only Chromium running — no shell, no package manager visible, total image under 400MB.
+
+**mitmproxy** in transparent mode, combined with `iptables PREROUTING` rules, forces every TCP byte from the VM through the host-controlled proxy. The VM has no path to the internet except through us.
+
+**AppArmor** will whitelist only the Chromium binary and our monitor agent. Everything else gets a SIGKILL from the kernel before it even starts.
+
+---
+
+## Phase 0 — Prerequisites & host setup
+
+Before writing any code, your Windows host needs these verified:
+
+```powershell
+# Verify Hyper-V is available
+Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
+
+# Enable if not present (requires reboot)
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+
+# Verify you are on Windows 10 build 14393+ (required for AF_HYPERV sockets)
+[System.Environment]::OSVersion.Version
+```
+
+Tools you need on the host side:
+_________________________________________________________________________________________
+| Tool 					| Purpose 					 |
+|---------------------------------------|------------------------------------------------|
+| PowerShell 7+ 			| VM orchestration scripts 			 |
+| Visual Studio / MinGW 		| Build the host-side IPC service (C++ or C#) 	 |
+| Python 3.10+ + mitmproxy 		| Network proxy 				 |
+| Windows Credential Manager API 	| Credential vault 				 |
+| Chocolatey / winget 			| Dependency management 			 |
+
+---
+
+## Phase 1 — Build the Alpine Linux VM image
+
+This is the inner-most security layer. We build it once, snapshot it, and restore it every session.
+
+### Step 1.1 — Install Alpine base
+
+Download the Alpine Linux Extended ISO (x86_64). Boot it in a temporary Hyper-V VM for image construction:
+
+```powershell
+# Create build VM (temporary, used to install Alpine)
+$buildVM = New-VM -Name "IsolatedBrowser-Build" `
+    -MemoryStartupBytes 2GB `
+    -Generation 2 `
+    -NewVHDPath "C:\VMs\IsolatedBrowser.vhdx" `
+    -NewVHDSizeBytes 10GB
+
+Set-VMProcessor $buildVM.Name -Count 2
+Set-VMDvdDrive -VMName $buildVM.Name -Path "C:\ISOs\alpine-extended-3.20-x86_64.iso"
+
+# Disable Secure Boot for Alpine Gen2
+Set-VMFirmware -VMName $buildVM.Name -SecureBootTemplate OpenSourceShieldedVM
+Set-VMFirmware -VMName $buildVM.Name -EnableSecureBoot Off
+
+Start-VM $buildVM.Name
+```
+
+Inside the Alpine installer (`setup-alpine`):
+- Keyboard: your locale
+- Hostname: `browser-vm`
+- Network: `eth0`, DHCP for now (we lock it down later)
+- Root password: strong, temporary — we'll disable root login before production
+- Disk: `sys` mode on `/dev/sda`
+
+### Step 1.2 — Harden the Alpine installation
+
+After base install, in the Alpine shell:
+
+```sh
+# Install only what is strictly necessary
+apk update
+apk add chromium xorg-server xinit xf86-video-fbdev xf86-input-evdev \
+    dbus udev eudev inotify-tools apparmor iptables \
+    python3 py3-pip socat util-linux
+
+# Install mitmproxy CA cert patcher tool
+pip3 install requests
+
+# Lock down the package manager — no more apk after this
+chmod 000 /usr/bin/apk
+```
+
+### Step 1.3 — Configure kiosk auto-login and Chromium start
+
+Create a dedicated non-root `kiosk` user. Chromium will run as this user. The monitor agent runs as root in a separate process.
+
+```sh
+adduser -D kiosk
+passwd -l kiosk  # lock password — no login possible
+```
+
+`/etc/inittab` — replace the tty1 getty line:
+
+```
+tty1::respawn:/bin/login -f kiosk
+```
+
+`/home/kiosk/.profile` — auto-start X only on tty1:
+
+```sh
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    exec startx
+fi
+```
+
+`/home/kiosk/.xinitrc` — launch Chromium directly with no window manager:
+
+```sh
+#!/bin/sh
+# Disable screensaver and DPMS
+xset -dpms
+xset s off
+xset s noblank
+
+# Launch your custom Chromium build in kiosk mode
+exec chromium-browser \
+    --kiosk \
+    --no-sandbox \
+    --incognito \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-translate \
+    --no-first-run \
+    --disable-features=TranslateUI \
+    --disk-cache-dir=/tmp/chromium-cache \
+    --user-data-dir=/tmp/chromium-profile \
+    --proxy-server="socks5://10.0.0.1:1080" \
+    --ignore-certificate-errors-spki-list=<MITM_CERT_SPKI_HASH> \
+    about:blank
+```
+
+The `--proxy-server` flag points Chromium at the host proxy. The `--ignore-certificate-errors-spki-list` pin tells Chromium to trust the mitmproxy CA without trusting the system store — cleaner than installing a CA into Alpine.
+
+---
+
+## Phase 2 — Network lockdown (inside VM)
+
+The VM should have exactly one network path: to the host proxy. Nothing else.
+
+### Step 2.1 — Virtual switch setup (host side)
+
+```powershell
+# Create an Internal switch (VM can reach host, not internet directly)
+New-VMSwitch -Name "IsolatedBrowserSwitch" -SwitchType Internal
+
+# Assign static IP to the host's virtual adapter
+$adapter = Get-NetAdapter | Where-Object { $_.Name -like "*IsolatedBrowserSwitch*" }
+New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex `
+    -IPAddress "10.0.0.1" `
+    -PrefixLength 24
+
+# Attach switch to the VM
+Add-VMNetworkAdapter -VMName "IsolatedBrowser-Build" -SwitchName "IsolatedBrowserSwitch"
+```
+
+### Step 2.2 — iptables rules (inside VM, applied at boot)
+
+Create `/etc/init.d/browser-firewall` (Alpine OpenRC service):
+
+```sh
+#!/sbin/openrc-run
+name="browser-firewall"
+description="Enforce proxy-only network policy"
+
+start() {
+    ebegin "Applying firewall rules"
+
+    # Flush existing rules
+    iptables -F
+    iptables -t nat -F
+
+    # Default DROP everything
+    iptables -P INPUT   DROP
+    iptables -P FORWARD DROP
+    iptables -P OUTPUT  DROP
+
+    # Allow loopback
+    iptables -A INPUT  -i lo -j ACCEPT
+    iptables -A OUTPUT -o lo -j ACCEPT
+
+    # Allow established connections
+    iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
+    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Allow ONLY outbound traffic to host proxy (10.0.0.1:8080)
+    iptables -A OUTPUT -d 10.0.0.1 -p tcp --dport 8080 -j ACCEPT
+
+    # Allow DNS queries to host-controlled resolver only
+    iptables -A OUTPUT -d 10.0.0.1 -p udp --dport 53 -j ACCEPT
+
+    # Allow Hyper-V VMBus socket traffic (for IPC channel)
+    # VMBus appears as a vsock — no iptables needed, it's a separate socket family
+
+    eend $?
+}
+```
+
+Enable at boot: `rc-update add browser-firewall default`
+
+### Step 2.3 — mitmproxy on the host
+
+On the Windows host, run mitmproxy as a systemd-style background service (or a Windows Service wrapper):
+
+```powershell
+# Install mitmproxy on the host
+pip install mitmproxy
+
+# Generate CA cert on first run
+mitmproxy  # creates ~/.mitmproxy/mitmproxy-ca-cert.pem
+
+# Export the SPKI hash (needed for Chromium flag)
+openssl x509 -in ~/.mitmproxy/mitmproxy-ca-cert.pem -pubkey -noout | `
+    openssl pkey -pubin -outform der | `
+    openssl dgst -sha256 -binary | `
+    base64
+```
+
+Run mitmproxy in transparent mode bound to the internal interface:
+
+```bash
+mitmdump \
+    --mode transparent \
+    --listen-host 10.0.0.1 \
+    --listen-port 8080 \
+    --set ssl_insecure=false \
+    --script proxy_logger.py
+```
+
+`proxy_logger.py` is a mitmproxy addon script that collects every URL, IP, domain, and response code and writes them to a session log:
+
+```python
+import json, datetime, pathlib
+from mitmproxy import http
+
+LOG_PATH = pathlib.Path("C:/BrowserLogs/network")
+LOG_PATH.mkdir(parents=True, exist_ok=True)
+
+def response(flow: http.HTTPFlow):
+    entry = {
+        "ts": datetime.datetime.utcnow().isoformat(),
+        "method": flow.request.method,
+        "url": flow.request.pretty_url,
+        "host": flow.request.pretty_host,
+        "ip": flow.server_conn.peername[0] if flow.server_conn.peername else None,
+        "status": flow.response.status_code,
+        "content_type": flow.response.headers.get("content-type", ""),
+        "size": len(flow.response.content),
+    }
+    log_file = LOG_PATH / f"session_{datetime.date.today()}.jsonl"
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+```
+
+---
+
+## Phase 3 — Hyper-V socket IPC channel
+
+This is the private, out-of-band communication channel between host and VM — used for password delivery, file export requests, and log streaming. It completely bypasses the VM's network interface.
+
+### Step 3.1 — Register the service on the host (PowerShell)
+
+```powershell
+$ServiceName   = "BrowserIsolationIPC"
+$ServiceGuid   = [System.Guid]::NewGuid().ToString()
+
+$regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices"
+$svc = New-Item -Path $regPath -Name $ServiceGuid
+$svc.SetValue("ElementName", $ServiceName)
+
+Write-Host "IPC Service GUID: $ServiceGuid"
+# Save this GUID — you'll hardcode it in the VM-side agent
+```
+
+### Step 3.2 — Host-side IPC server (C# / .NET)
+
+```csharp
+// Host: BrowserIsolationHost/IpcServer.cs
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
+
+// AF_HYPERV = 34 on Windows
+const AddressFamily AF_HYPERV = (AddressFamily)34;
+const ProtocolType  HV_PROTOCOL_RAW = (ProtocolType)1;
+
+// HV_GUID_WILDCARD — accept from any VM
+var vmId      = Guid.Parse("00000000-0000-0000-0000-000000000000");
+var serviceId = Guid.Parse("<YOUR-SERVICE-GUID-FROM-POWERSHELL>");
+
+var server = new Socket(AF_HYPERV, SocketType.Stream, HV_PROTOCOL_RAW);
+// Bind and listen using SOCKADDR_HV — P/Invoke required
+// (full implementation in Phase 3.3 below)
+
+while (true)
+{
+    var client = await server.AcceptAsync();
+    _ = Task.Run(() => HandleClient(client));
+}
+
+async Task HandleClient(Socket client)
+{
+    // Dispatch on message type: CRED_REQUEST, FILE_EXPORT, LOG_DATA
+    var buffer = new byte[4096];
+    while (true)
+    {
+        int n = await client.ReceiveAsync(buffer);
+        if (n == 0) break;
+        var msg = IpcMessage.Deserialize(buffer[..n]);
+        switch (msg.Type)
+        {
+            case "CRED_REQUEST":
+                var cred = CredentialVault.Retrieve(msg.Payload);
+                await client.SendAsync(IpcMessage.Serialize("CRED_RESPONSE", cred));
+                break;
+            case "FILE_EXPORT":
+                await FileExportPipeline.Enqueue(msg.Payload);
+                break;
+            case "LOG_FLUSH":
+                SessionLogger.Append(msg.Payload);
+                break;
+        }
+    }
+}
+```
+
+### Step 3.3 — VM-side IPC client (C, runs in Alpine)
+
+```c
+/* vm_agent/ipc_client.c */
+#include <stdio.h>
+#include <string.h>
+#include <linux/vm_sockets.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+/* On Linux guests: AF_VSOCK + CID 2 = Hyper-V host */
+#define VMADDR_CID_HOST 2
+
+int ipc_connect(int port) {
+    int sock = socket(AF_VSOCK, SOCK_STREAM, 0);
+    if (sock < 0) { perror("socket"); return -1; }
+
+    struct sockaddr_vm addr = {
+        .svm_family = AF_VSOCK,
+        .svm_cid    = VMADDR_CID_HOST,
+        .svm_port   = port  /* must match service GUID port mapping */
+    };
+
+    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("connect");
+        close(sock);
+        return -1;
+    }
+    return sock;
+}
+
+/* Request a credential from the host vault */
+int request_credential(const char* site, char* out_buf, size_t out_len) {
+    int fd = ipc_connect(49152);
+    if (fd < 0) return -1;
+
+    /* Wire format: JSON line */
+    char req[512];
+    snprintf(req, sizeof(req),
+        "{\"type\":\"CRED_REQUEST\",\"payload\":\"%s\"}\n", site);
+    write(fd, req, strlen(req));
+
+    int n = read(fd, out_buf, out_len - 1);
+    out_buf[n > 0 ? n : 0] = '\0';
+    close(fd);
+    return n;
+}
+```
+
+---
+
+## Phase 4 — Process monitor & kill switch (inside VM)
+
+This is your watchdog. It runs as root at all times and watches for any sign of Chromium compromise.
+
+```sh
+#!/bin/sh
+# /usr/local/bin/monitor-agent.sh — runs as root via OpenRC
+
+CHROMIUM_PID=""
+LOG_DIR="/tmp/monitor-logs"
+mkdir -p "$LOG_DIR"
+
+log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG_DIR/agent.log"; }
+
+get_chromium_pid() {
+    pgrep -x chromium-browser | head -1
+}
+
+is_suspicious_spawn() {
+    local parent_pid="$1"
+    local child_cmd="$2"
+    case "$child_cmd" in
+        *sh|*bash|*python*|*perl*|*wget*|*curl*|*nc|*ncat*)
+            return 0 ;;  # suspicious
+    esac
+    return 1
+}
+
+kill_and_reset() {
+    log "ALERT: Compromise detected — initiating shutdown"
+    # Notify host via IPC
+    echo '{"type":"ALERT","payload":"compromise_detected"}' | \
+        socat - VSOCK-CONNECT:2:49152
+
+    # Kill everything as last resort
+    kill -9 -1
+    sleep 1
+    poweroff
+}
+
+monitor_loop() {
+    while true; do
+        # Check Chromium is alive
+        CPID=$(get_chromium_pid)
+        if [ -z "$CPID" ]; then
+            log "Chromium not running — restarting or resetting"
+            # Optionally restart; for security: just kill the VM
+            kill_and_reset
+        fi
+
+        # Scan for unexpected processes (children of Chromium that are shells)
+        for child_pid in $(pgrep -P "$CPID"); do
+            child_cmd=$(cat /proc/$child_pid/comm 2>/dev/null)
+            if is_suspicious_spawn "$CPID" "$child_cmd"; then
+                log "Suspicious child: pid=$child_pid cmd=$child_cmd"
+                kill_and_reset
+            fi
+        done
+
+        # Monitor writes outside allowed dirs using inotifywait
+        # (started separately as a background daemon — see below)
+
+        sleep 2
+    done
+}
+
+# Start file monitor daemon
+inotifywait -m -r -e create,modify,moved_to \
+    --exclude "^/tmp/" \
+    / 2>/dev/null | while read line; do
+    log "UNAUTHORIZED WRITE: $line"
+    kill_and_reset
+done &
+
+monitor_loop
+```
+
+---
+
+## Phase 5 — AppArmor policy
+
+```
+#include <tunables/global>
+
+profile chromium-browser /usr/bin/chromium-browser flags=(complain) {
+  #include <abstractions/base>
+  #include <abstractions/X>
+  #include <abstractions/fonts>
+  #include <abstractions/audio>
+
+  # Chromium binary
+  /usr/bin/chromium-browser mr,
+  /usr/lib/chromium/** mr,
+
+  # Allowed write locations ONLY
+  /tmp/chromium-cache/ rw,
+  /tmp/chromium-cache/** rw,
+  /tmp/chromium-profile/ rw,
+  /tmp/chromium-profile/** rw,
+  /tmp/downloads/ rw,
+  /tmp/downloads/** rw,
+
+  # Deny everything else
+  deny /etc/** w,
+  deny /home/** w,
+  deny /var/** w,
+  deny /usr/** w,
+  deny /bin/** x,
+  deny /sbin/** x,
+  deny /bin/sh x,
+  deny /bin/bash x,
+}
+```
+
+Load and enforce: `apparmor_parser -r /etc/apparmor.d/chromium-browser`
+
+---
+
+## Phase 6 — File export pipeline
+
+When the user wants to export a downloaded file:
+
+**VM side** — the file sits in `/tmp/downloads/`. The export request is sent over the IPC socket:
+
+```sh
+# export_request.sh
+FILE="$1"
+FILE_HASH=$(sha256sum "$FILE" | cut -d' ' -f1)
+FILE_DATA=$(base64 < "$FILE")
+
+printf '{"type":"FILE_EXPORT","payload":{"name":"%s","hash":"%s","data":"%s"}}\n' \
+    "$(basename $FILE)" "$FILE_HASH" "$FILE_DATA" | \
+    socat - VSOCK-CONNECT:2:49152
+```
+
+**Host side** — the file sanitizer receives the export, writes to a quarantine folder, runs Windows Defender, checks the hash against known bad lists, then releases:
+
+```csharp
+// FileExportPipeline.cs
+async Task Enqueue(string payload)
+{
+    var req = JsonSerializer.Deserialize<FileExportRequest>(payload);
+
+    var quarantinePath = Path.Combine(@"C:\BrowserQuarantine", req.Name);
+    await File.WriteAllBytesAsync(quarantinePath,
+        Convert.FromBase64String(req.Data));
+
+    // Verify hash
+    var actualHash = ComputeSha256(quarantinePath);
+    if (actualHash != req.Hash)
+    { /* tamper detected — delete and alert */ return; }
+
+    // Run Windows Defender scan
+    var proc = Process.Start("MpCmdRun.exe",
+        $"-Scan -ScanType 3 -File \"{quarantinePath}\"");
+    await proc.WaitForExitAsync();
+
+    if (proc.ExitCode == 0)
+    {
+        // Clean — move to user's Downloads
+        File.Move(quarantinePath,
+            Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.UserProfile),
+                "Downloads", req.Name));
+    }
+    else
+    {
+        // Infected — alert user, delete quarantined file
+        File.Delete(quarantinePath);
+        AlertUser($"File {req.Name} was flagged as malicious and blocked.");
+    }
+}
+```
+
+---
+
+## Phase 7 — VM lifecycle management
+
+Every browser session starts from a clean snapshot. No session state ever carries over.
+
+```powershell
+# SessionManager.ps1
+
+$VMName       = "IsolatedBrowser"
+$SnapshotName = "CleanBaseline"
+$VHDXPath     = "C:\VMs\IsolatedBrowser.vhdx"
+
+function Start-BrowserSession {
+    Write-Host "Restoring clean snapshot..."
+    Restore-VMSnapshot -VMName $VMName -Name $SnapshotName -Confirm:$false
+
+    Write-Host "Starting VM..."
+    Start-VM -Name $VMName
+
+    Write-Host "Session live. Press Ctrl+C to end session."
+    Wait-Event -SourceIdentifier "SessionEnd"
+}
+
+function End-BrowserSession {
+    Write-Host "Collecting logs from VM..."
+    # Logs are already streamed to host via IPC during session
+
+    Write-Host "Stopping VM..."
+    Stop-VM -Name $VMName -Force
+
+    Write-Host "Session ended. VM destroyed back to snapshot."
+}
+
+# Ensure the IPC proxy service is running
+Start-Process mitmdump -ArgumentList `
+    "--mode transparent --listen-host 10.0.0.1 --listen-port 8080 --script proxy_logger.py" `
+    -WindowStyle Hidden
+
+Start-BrowserSession
+```
+
+---
+
+## Phase 8 — Hardening checklist before production
+
+| # | Check | Method |
+|---|---|---|
+| 1 | Clipboard sharing disabled | `Set-VMIntegrationService -VMName ... -Name "Guest Service Interface" -Enabled $false` |
+| 2 | Drive sharing disabled | Confirm no shared folders on the VM |
+| 3 | No direct internet from VM | `iptables -L` inside VM — default DENY confirmed |
+| 4 | AppArmor in enforce mode | `aa-status` inside VM shows Chromium in enforce |
+| 5 | Root filesystem read-only | `mount | grep "ro,"` shows `/` is read-only |
+| 6 | VM console disabled in prod | `Set-VMVideo` — minimal, no Enhanced Session |
+| 7 | Password never enters VM | Grep VM memory dump for credential strings |
+| 8 | All file exports go through quarantine | Test with EICAR test file |
+| 9 | Kill switch fires on shell spawn | `nsenter` test — VM should self-terminate |
+| 10 | Session restore verified | Check VHDX hash matches baseline after each session |
+
+---
+
+## Build order — what to do first
+
+The correct sequence to avoid integration hell:
+
+1. **Get Alpine booting in Hyper-V** with Chromium in kiosk mode. Verify X11 works.
+2. **Set up the internal virtual switch** and confirm host can ping the VM.
+3. **Get mitmproxy running on the host** and confirm VM traffic routes through it.
+4. **Implement and test the iptables rules** — verify no traffic bypasses the proxy.
+5. **Build the HV socket IPC channel** — start with a simple echo test both ways.
+6. **Implement the credential vault** on the host and wire it to the IPC.
+7. **Add AppArmor policy** — start in complain mode, watch logs, switch to enforce.
+8. **Add the process watchdog** and test the kill switch with a fake shell spawn.
+9. **Implement file export pipeline** — test with EICAR, then clean files.
+10. **Implement VM snapshot lifecycle** — test full boot → browse → destroy cycle.
+11. **Performance tune** — measure boot time target (under 5 seconds from snapshot restore).
+
+---
+
+

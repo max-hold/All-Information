@@ -1,0 +1,33 @@
+Whitelist URLs only / DNS filtering
+Disable keyboard shortcuts in alpine linux at the OS level
+disable TTY switching
+disable keyboard shortcuts
+config generator (like Porteus wizard)	
+
+
+
+
+Hardened profile
+
+Disable:
+	downloads
+	file picker
+	save dialogs
+	devtools
+	print
+	view source
+	extensions
+	sync
+	updates
+
+Shortcut blocking
+
+Block:
+	Ctrl+L
+	Ctrl+O
+	Ctrl+S
+	Ctrl+Shift+I
+	Alt+Tab
+	Alt+F4
+	Super key
+

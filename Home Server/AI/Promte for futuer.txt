@@ -1,0 +1,31 @@
+Build a comparison dashboard for Native Client, Termux Sandbox, SerenityOS, and Ghost OS showing isolation method, kernel type, supported apps, and host OS compatibility
+Computer
+​
+Create a step-by-step PDF guide to set up Termux Sandbox on Android for running isolated Ubuntu with native performance and test with a sample app.
+​
+How to install and run SerenityOS in QEMU on Linux host
+What are security features of SerenityOS kernel for isolation
+Compare SerenityOS vs Redox OS for VM isolation
+
+
+
+Build a secure browser VM setup guide PDF for Qubes OS and Ubuntu with Firejail, including step-by-step installation and configuration
+Computer
+​
+Create a comparison dashboard for Linux sandboxing tools: Qubes OS, Firejail, Flatpak, and Bubblewrap with isolation levels and resource usage
+Computer
+​
+How to install Qubes OS on Linux hardware
+Qubes OS system requirements and performance
+Firejail vs Qubes OS for browser isolation
+
+
+Why Qubes OS users build custom AppVM application templates instead of relying on centralized repositories — tradeoffs in maintenance and security
+Deep research
+​
+Qubes OS GitHub repository for managing AppVMs
+Open source tools for tracking apps in VM isolation like Qubes
+GitHub projects similar to Qubes OS app tracking
+Qubes OS app inventory management repo4
+
+Use ELECTRON FOR GUI
