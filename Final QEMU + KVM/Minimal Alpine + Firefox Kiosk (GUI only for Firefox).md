@@ -225,13 +225,6 @@ chown max:max ~/.config/openbox/rc.xml
 ```
 
 - not sure this work because it didn't try.
-- Block keyboard escape routes [Not work]
-```
-# Disable TTY switching from within X
-setxkbmap -option srvrkeys:none
-```
-
-- not sure this work because it didn't try.
 - Mount the filesystem read-only where possible
 ```
 su -
