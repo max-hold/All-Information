@@ -1,0 +1,98 @@
+QEMU/KVM graphics always works in two parts: a **frontend** (the virtual GPU the guest sees) and a **backend** (how the host displays or forwards it). Depending on your needs—whether you just want a smooth desktop, 3D acceleration without extra hardware, or near-native gaming performance—there are several distinct methods.
+
+Here is a practical breakdown from basic to advanced.
+
+---
+
+### 1. Basic Virtual GPUs (No Host GPU Required)
+
+These are fully virtualized devices. They are the easiest to set up but vary in performance and features.
+
+| Method 				 | Frontend 			| Backend 	    | Best For 										 |
+|----------------------------------------|------------------------------|-------------------|------------------------------------------------------------------------------------|
+| **Standard VGA** (`-vga std`) 	 | `bochs-drm` driver in guest  | GTK/SDL/SPICE/VNC | Legacy OS compatibility; limited to 1920×1080 and slow                             |
+| **QXL + SPICE** (`-vga qxl -spice`) 	 | QXL driver 			| SPICE client      | Best for remote desktops; supports clipboard sharing, dynamic resolution 		 |
+| **Virtio-GPU (2D)** (`-vga virtio`) 	 | `virtio-gpu` driver 		| GTK/SDL/SPICE/VNC | Modern Linux guests; arbitrary resolutions, but 3D is software-rendered (LLVMpipe) |
+
+**Key distinction:** QXL/SPICE is optimized for remote administration and VDI workloads, while Virtio-GPU is the modern paravirtual standard that behaves more like a native display adapter.
+
+---
+
+### 2. 3D Acceleration Without Passthrough (Virgil / Virglrenderer)
+
+If you want OpenGL acceleration but do not have a spare GPU or IOMMU setup, QEMU can forward the guest’s OpenGL calls to the host GPU via **Virgil**.
+
+- **Command line:** `-vga virtio -display gtk,gl=on` (or `sdl,gl=on`)
+- **What it does:** The guest uses the `virgl` Mesa driver. OpenGL calls are translated to an intermediate representation, sent to the host, and executed by the host GPU via `virglrenderer`.
+- **Performance:** Good for desktop compositors and moderate 3D; not bare-metal gaming performance.
+- **Requirements:** Guest drivers (common in Linux kernel ≥ 4.4) and a host display with a GL context (GTK/SPICE with OpenGL enabled).
+
+In `virt-manager`, this is configured by setting the video model to **Virtio** and checking **3D acceleration**, while setting the display to **SPICE + OpenGL**.
+
+---
+
+### 3. GPU Passthrough (PCI/VFIO Passthrough)
+
+For **near-native GPU performance** (gaming, CAD, AI workloads), you pass an entire physical GPU through to the guest.
+
+- **How it works:** The host unbinds the GPU from its driver and binds it to `vfio-pci`. QEMU attaches it directly to the guest via `-device vfio-pci,host=05:00.0`.
+- **Requirements:**
+  - CPU/BIOS with IOMMU (Intel VT-d or AMD-Vi) enabled.
+  - The GPU should ideally be isolated in its own IOMMU group.
+  - For NVIDIA cards, you may need to patch or dump the vBIOS to avoid driver errors.
+- **Variants:**
+  - **Multi-GPU:** One GPU for the host, another for the guest.
+  - **Single GPU passthrough:** The host gives up its only GPU to the guest. This requires switching the host to a text console or using tools like Xpra to save the session before launching the VM.
+
+---
+
+### 4. Mediated Devices / vGPU (Sharing One GPU Across Multiple VMs)
+
+If you have one powerful GPU but want to share it among several VMs, you use **mediated device passthrough** (vGPU / SR-IOV).
+
+- **Intel:** Older integrated GPUs use `i915` GVT-g (out-of-tree kernel module or DKMS). Newer Xe-architecture GPUs use the mainline `xe` driver with SR-IOV, creating virtual functions (VFs) that can be passed to guests.
+- **NVIDIA / AMD:** Professional cards (e.g., NVIDIA GRID/vGPU, AMD MxGPU) support similar partitioning.
+- **Command line:** `-display gtk,gl=on -device vfio-pci,sysfsdev=/sys/bus/pci/devices/.../uuid,display=on`.
+- **Trade-off:** Easier resource sharing than full passthrough, but setup is vendor-specific and often requires proprietary drivers.
+
+---
+
+### 5. Looking Glass (Frame Scraping for Passthrough)
+
+**Looking Glass** is a companion technique to GPU passthrough. Instead of plugging a monitor into the passed-through GPU, the guest’s rendered frames are copied from the guest GPU’s framebuffer into a shared memory region and displayed in a window on the host.
+
+- **Use case:** You passed a GPU to a Windows VM but want to see its output on your Linux host desktop without a second monitor.
+- **Mechanism:** Uses DXGI/DirectX on the guest to capture frames and a host client to display them with very low latency.
+- **Note:** This is **not** a virtual GPU; it is a display transport for a passthrough GPU.
+
+---
+
+### 6. Other Display Backends & Protocols
+
+QEMU supports multiple ways to expose the frontend to the user:
+
+| Backend 			| Use Case 													|
+|-------------------------------|---------------------------------------------------------------------------------------------------------------|
+| **GTK** (`-display gtk`) 	| Native host window; supports OpenGL when combined with `gl=on` 						|
+| **SDL** 			| Simple cross-platform window 											|
+| **VNC** (`-vnc :0`) 		| Remote access; universal but less efficient than SPICE 							|
+| **SPICE** (`-spice ...`) 	| High-performance remote protocol with audio, clipboard, and USB redirection 					|
+| **Curses** 			| Text-only 													|
+| **D-Bus / Headless**   	| Automation and CI/CD 												|
+| **Rutabaga / GFXStream**   	| Android/ChromeOS guests; forwards GLES and Vulkan with minimal modification, supports Wayland passthrough 	|
+
+---
+
+### Summary Decision Tree
+
+| Your Goal 							| Recommended Method 								|
+|---------------------------------------------------------------|-------------------------------------------------------------------------------|
+| Just install a modern Linux VM with a responsive GUI 		| **Virtio-GPU** (`-vga virtio`) 						|
+| Smooth remote desktop with clipboard/audio 			| **QXL + SPICE** 								|
+| Moderate 3D / compositor acceleration without extra hardware  | **Virtio-GPU + Virgl** (`-vga virtio -display gtk,gl=on`) 			|
+| Gaming / professional GPU workloads with a spare GPU 		| **PCI GPU Passthrough** (VFIO) 						|
+| One GPU, multiple VMs 					| **Mediated Devices / vGPU / SR-IOV** 						|
+| Passthrough GPU output on host monitor (no extra screen) 	| **GPU Passthrough + Looking Glass** 						|
+| Android/ChromeOS guest with Vulkan 				| **Virtio-GPU + Rutabaga/GFXStream** 						|
+
+For most users today, the sweet spot is **Virtio-GPU with 3D acceleration (Virgl)** for convenience, or **full GPU passthrough** for maximum performance. If you use `virt-manager`, the first two are just checkbox settings, while passthrough requires IOMMU configuration and kernel command-line tweaks.

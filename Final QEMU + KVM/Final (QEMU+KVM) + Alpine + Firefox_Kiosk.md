@@ -69,8 +69,8 @@ sudo systemctl status libvirtd.service
 ## Part 2: Create Guest OS Image
 ### Step 2.1: Download Alpine Image
 ```
-mkdir -p ~/qemu-max-All
-cd ~/qemu-max-All
+mkdir -p ~/qemu-max-test
+cd ~/qemu-max-test
 
 # Get the latest standard x86_64 ISO
 BASE_URL="https://dl-cdn.alpinelinux.org/alpine"
@@ -106,7 +106,8 @@ qemu-system-x86_64 \
   -cdrom alpine-standard.iso \
   -boot d \
   \
-  -device virtio-gpu-pci,virgl=on -display sdl,gl=on \
+  -device virtio-vga \
+  -display gtk,gl=on \
   \
   -device qemu-xhci \
   -device usb-tablet \
@@ -177,19 +178,12 @@ qemu-system-x86_64 \
   -device usb-kbd \
   \
   -netdev user,id=net0,restrict=off,hostfwd=tcp::2222-:22 \
-  -device virtio-net-pci,netdev=net0
-EOF
-```
-
-- you can run above command with this change 
-```
+  -device virtio-net-pci,netdev=net0 \
+  \
   -sandbox on \
   -no-user-config -nodefaults \
   -name "Alpine-Post-Install"
-
-# -no-user-config “Ignore any user configuration files” (~/.config/qemu/qemu.conf or similar).
-# -nodefaults "Disables all automatic default devices that QEMU normally adds behind your back."
-# -name "Alpine-Post-Install" "Simply sets a human-readable name for this QEMU process."
+EOF
 ```
 
 ```
@@ -229,7 +223,7 @@ qemu-img create -f qcow2 -b alpine-standard-base.qcow2 -F qcow2 alpine-snapshot-
 # =============================================
 
 
-cd ~/qemu-max-All || { echo "Error: Directory ~/alpine-kvm not found"; exit 1; }
+cd ~/qemu-max-test || { echo "Error: Directory ~/alpine-kvm not found"; exit 1; }
 
 # === 1. Create temporary overlay (fresh every run) ===
 OVERLAY="temp-overlay-$$.qcow2"          # unique name using process ID

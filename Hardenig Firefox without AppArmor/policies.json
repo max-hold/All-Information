@@ -11,6 +11,7 @@
     "DisableDeveloperTools": true,
     "DisableFeedbackCommands": true,
     "DisableFirefoxAccounts": true,
+    "DisableFirefoxScreenshots": true,
     "DisableFirefoxStudies": true,
     "DisableFirefoxStudies_comment": "Disable Firefox studies (Shield).",
     "DisableForgetButton": true,

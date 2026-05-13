@@ -54,12 +54,12 @@ su - max
 ```
 # Create Openbox config directory
 ```
-mkdir -p ~/.config/openbox
-chmod 700 ~/.config/openbox
+mkdir -p /home/max/.config/openbox
+chmod 700 /home/max/.config/openbox
 ```
 # Create .xinitrc
 ```
-nano ~/.xinitrc
+nano /home/max/.xinitrc
 ```
 # add
 ```
@@ -87,13 +87,13 @@ setxkbmap -option ""
 ```
 # change the permission 
 ```
-chmod +x ~/.xinitrc
-chmod 700 ~/.xinitrc
-chown max:max ~/.xinitrc
+chmod +x /home/max/.xinitrc
+chmod 700 /home/max/.xinitrc
+chown max:max /home/max/.xinitrc
 ```
 # Create Openbox autostart
 ```
-cat > ~/.config/openbox/autostart <<EOF
+cat > /home/max/.config/openbox/autostart <<EOF
 #!/bin/sh
 
 # Start Firefox in kiosk loop (change the URL/path to your content)
@@ -103,13 +103,13 @@ while true; do
 done
 EOF
 
-chmod +x ~/.config/openbox/autostart
-chmod 700 ~/.config/openbox/autostart
-chown max:max ~/.config/openbox/autostart
+chmod +x /home/max/.config/openbox/autostart
+chmod 700 /home/max/.config/openbox/autostart
+chown max:max /home/max/.config/openbox/autostart
 ```
 # Edit user profile
 ```
-nano ~/.profile
+nano /home/max/.profile
 ```
 # add
 ```
@@ -119,8 +119,8 @@ fi
 ```
 # change the permission
 ```
-chmod 600 ~/.profile
-chown max:max ~/.profile
+chmod 600 /home/max/.profile
+chown max:max /home/max/.profile
 ```
 #  Edit inittab
 ```
@@ -129,7 +129,7 @@ su -
 nano /etc/inittab
 ```
 - Find this line:
-`texttty1::respawn:/sbin/getty 38400 tty1`
+`ttty1::respawn:/sbin/getty 38400 tty1`
 - Replace with:
 `tty1::respawn:/bin/login -f max`
 - and comment the all tty lines
@@ -160,7 +160,7 @@ chown root:root /etc/profile.d/startx.sh
 ```
 su - max
 
-cat > ~/.config/openbox/rc.xml <<'EOF'
+cat > /home/max/.config/openbox/rc.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <mouse>
@@ -220,8 +220,8 @@ cat > ~/.config/openbox/rc.xml <<'EOF'
 </openbox_config>
 EOF
 
-chmod 600 ~/.config/openbox/rc.xml
-chown max:max ~/.config/openbox/rc.xml
+chmod 600 /home/max/.config/openbox/rc.xml
+chown max:max /home/max/.config/openbox/rc.xml
 ```
 
 - not sure this work because it didn't try.
@@ -255,7 +255,7 @@ startx
 
 - Check logs if needed:
 ```
-~/.xsession-errors
+/home/max/.xsession-errors
 /var/log/Xorg.0.log
 ```
 
