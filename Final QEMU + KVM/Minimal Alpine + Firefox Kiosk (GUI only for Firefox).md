@@ -216,7 +216,6 @@ cat > /home/max/.config/openbox/rc.xml <<'EOF'
     <keybind key="F11"><action name="Execute"><command>true</command></action></keybind>
     <keybind key="F12"><action name="Execute"><command>true</command></action></keybind>
   </keyboard>
-  </keyboard>
 </openbox_config>
 EOF
 
